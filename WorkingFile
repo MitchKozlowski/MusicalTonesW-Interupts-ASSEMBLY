@@ -1,0 +1,204 @@
+;program data - these values may change
+.def temp = R16 ;temporary storage
+.def temp2 = R17 ;outer loop counter
+.def temp3 = R18 ;inner loop counter
+.def save_note_half_period = R19 ;storage for half period of note
+.def half_periods = R20 ;half period of note
+.def number_periods = R21 ;note duration (number of periods)
+
+;program code
+.org 0x0000
+jmp start ; jump over interrupt vector and interrupt service routine
+
+;**************
+
+.org OC0Aaddr ; causes processing to arrive here
+jmp ISR_OC0A ; jump to interrupt service routine 
+
+.org INT_VECTORS_SIZE;start interrupt service routine beyond all interrupt vectors
+;**************
+
+ISR_OC0A: ; TimerCounter0 Compare Match A interrupt service routine
+
+sbi PIND, PortD0 ; toggle the speaker pin
+in temp2,PIND
+andi temp2,0b00000001 ;mask out all but bit0
+cpi temp2,0b00000000 ;is one period finished?
+brne over
+dec number_periods ;period counter
+over:
+reti
+
+;*****************************************************************************************************************************
+; main program
+start:
+; initialize the stack pointer at end of user memory
+ldi temp, low (RAMEND) ;Load the low byte of the last SRAM memory address
+out SPL, temp ;into the low byte of the stack pointer
+ldi temp, high (RAMEND) ;Load the high byte of the last SRAM memory address
+out SPH, temp ;into the high byte of the stack pointer
+
+ldi temp,0b00000010 ; Enable OCIE0A Interrupt in
+sts TIMSK0,temp   ; Timer/Counter Interrupt Mask Register
+sei   ; Enable Global Interrupt
+
+
+;set up the speaker port
+ldi temp, 0b00000001 ;configure Port D bit0 for output
+out DDRD, temp
+
+;set up the push button port
+ldi temp, 0b11110000 ;configure lower 4 bits of Port B for input
+out DDRB, temp
+
+;OC0A disconnected, 0b00xxxx10
+ldi temp, 0b00000010
+out TCCR0A,temp
+
+;Load Timer/Counter Control Register TCCR0B
+ldi temp, 0b00000100
+out TCCR0B,temp
+
+;initialize the speaker
+done: ;also exit point when all tune note are done
+ldi temp,0b00000000 ;turn the speaker off
+out PORTD,temp
+;********************************
+get_data:
+;ldi temp,0b11111111 ;stopped tune repeat
+;
+;ldi temp, 0
+;out PORTD, temp
+in temp, PINB ;Read push buttons on Port B
+com temp ;Invert push button logic to active LOW
+andi temp, 0b00001111 ;Mask out upper four bits
+cpi temp, 0b00000001 ;Is PB0 pressed?
+breq first ;Proceed to the first task
+
+cpi temp, 0b00000010 ;Is PB1 pressed?
+breq second ;Proceed to the second task
+
+cpi temp, 0b00000100 ;Is PB2 pressed?
+breq third ;Proceed to the third task
+
+cpi temp, 0b00001000 ;Is PB3 pressed?
+breq fourth ;Proceed to the fourth task
+
+
+jmp get_data ;keep reading pushbuttons
+
+;********************************
+first: ; arrive here if pushbutton value = 0b00000001
+
+    ldi ZH, high(first_tune) ;point to the half period data
+    ldi ZL, low(first_tune) ;point to the duration data
+
+    lsl ZL ;initialize LSB of ZH for LPM instruction
+rol ZH ;initialize LSB of ZL for LPM instruction
+
+tones_01: 
+lpm half_periods, Z+ ;get note half period data (first data byte)
+lpm number_periods, Z+ ;get note duration data (second data byte)
+
+out OCR0A, half_periods
+
+cpi number_periods,0b00000000 ;check for "end of tune" flag
+breq done ;found "end of tune" flag
+
+toggle_wait_01: ;waiting for interrupt to toggle speaker
+cpi number_periods,0
+breq tones_01
+jmp toggle_wait_01
+
+
+
+;also exit point when all tune note are done
+; ldi temp,0b00000000 ;turn the speaker off
+; out PORTD,temp
+;********************************
+second: ;arrive here if pushbutton value = 0b00000010
+
+    ldi ZH, high(second_tune) ;point to the half period data
+    ldi ZL, low(second_tune) ;point to the duration data
+
+    lsl ZL ;initialize LSB of ZH for LPM instruction
+rol ZH ;initialize LSB of ZL for LPM instruction
+
+tones_02: 
+lpm half_periods, Z+ ;get note half period data (first data byte)
+lpm number_periods, Z+ ;get note duration data (second data byte)
+
+out OCR0A, half_periods
+
+cpi number_periods,0b00000000 ;check for "end of tune" flag
+breq done ;found "end of tune" flag
+
+toggle_wait_02: ;waiting for interrupt to toggle speaker
+cpi number_periods,0
+breq tones_02
+jmp toggle_wait_02
+
+;********************************
+done2:
+jmp done
+;********************************
+third: ;arrive here if pushbutton = 0b00000100
+
+    ldi ZH, high(third_tune) ;point to the half period data
+    ldi ZL, low(third_tune) ;point to the duration data
+
+    lsl ZL ;initialize LSB of ZH for LPM instruction
+rol ZH ;initialize LSB of ZL for LPM instruction
+
+tones_03: 
+lpm half_periods, Z+ ;get note half period data (first data byte)
+lpm number_periods, Z+ ;get note duration data (second data byte)
+
+out OCR0A, half_periods
+
+cpi number_periods,0b00000000 ;check for "end of tune" flag
+breq done2 ;found "end of tune" flag
+
+toggle_wait_03: ;waiting for interrupt to toggle speaker
+cpi number_periods,0
+breq tones_03
+jmp toggle_wait_03
+;********************************
+fourth: ;arrive here if pushbutton value = 0b00001000
+    ldi ZH, high(fourth_tune) ;point to the half period data
+    ldi ZL, low(fourth_tune) ;point to the duration data
+
+    lsl ZL ;initialize LSB of ZH for LPM instruction
+rol ZH ;initialize LSB of ZL for LPM instruction
+
+tones_04: 
+lpm half_periods, Z+ ;get note half period data (first data byte)
+lpm number_periods, Z+ ;get note duration data (second data byte)
+
+out OCR0A, half_periods
+
+cpi number_periods,0b00000000 ;check for "end of tune" flag
+breq done2 ;found "end of tune" flag
+
+toggle_wait_04: ;waiting for interrupt to toggle speaker
+cpi number_periods,0
+breq tones_04
+jmp toggle_wait_04
+
+;********************************
+;*         Data Tables          *
+;********************************
+first_tune: ;Alfred State College Alma Mater
+.db 126,58,75,98,75,98,84,87,84,87,94,78,94,78,94,78,94,78,56,131,56,131,63,117,63,117,71,104,0,0
+
+second_tune: 
+.db 56,131,67,110,67,110,56,131,50,147,75,98,75,98,67,110,42,175,42,175,44,165,56,131,50,147,56,131,63,117,71,104,0,0
+
+
+third_tune:
+.db 75,98,89,82,112,65,89,92,75,98,56,131,44,165,50,147,89,82,79,92,75,98,0,0
+
+
+fourth_tune:
+
+.db 126,58,75,98,75,98,84,87,84,87,94,78,94,78,94,78,94,78,56,131,56,131,63,117,63,117,71,104,0,0
